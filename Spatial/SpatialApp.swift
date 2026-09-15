@@ -1,6 +1,7 @@
 import SwiftUI
 import RoomPlan
 import ARKit
+import RealityKit
 import UniformTypeIdentifiers
 
 @main struct SpatialApp: App {
@@ -63,11 +64,17 @@ struct DashboardView: View {
                 .fullScreenCover(item: $scan) { kind in CaptureRouter(kind: kind) }
                 .alert("Gerät nicht unterstützt", isPresented: $unavailable) {
                     Button("OK", role: .cancel) {}
-                } message: { Text("Raumscan und 3D-Oberflächen benötigen einen LiDAR-Sensor. Das AR-Maßband funktioniert auf Geräten mit ARKit-Welterkennung.") }
+                } message: { Text("Raumscan und Foto-Raum benötigen unterstützte LiDAR-Hardware. Der Objekt-Fotoscan benötigt zusätzlich Apples Object Capture und lokale Fotogrammetrie. Verfügbare Funktionen stehen unter Einstellungen.") }
         }
     }
     private func supported(_ kind: ScanKind) -> Bool {
-        switch kind { case .room, .volume: return RoomCaptureSession.isSupported; case .measure: return ARWorldTrackingConfiguration.isSupported; case .mesh: return ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) }
+        switch kind {
+        case .room, .volume: return RoomCaptureSession.isSupported
+        case .photoRoom: return ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) && ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)
+        case .object: return ObjectCaptureSession.isSupported && PhotogrammetrySession.isSupported
+        case .measure: return ARWorldTrackingConfiguration.isSupported
+        case .mesh: return ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
+        }
     }
 }
 
@@ -163,15 +170,17 @@ struct SettingsView: View {
                     LabeledContent("Raumerkennung", value: RoomCaptureSession.isSupported ? "RoomPlan + LiDAR" : "Nicht verfügbar")
                     LabeledContent("3D-Netz", value: ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) ? "Verfügbar" : "Nicht verfügbar")
                     LabeledContent("AR-Messungen", value: ARWorldTrackingConfiguration.isSupported ? "Verfügbar" : "Nicht verfügbar")
+                    LabeledContent("Objekt-Fotogrammetrie", value: ObjectCaptureSession.isSupported && PhotogrammetrySession.isSupported ? "Verfügbar" : "Nicht verfügbar")
                 }
                 Section("Für gute Scans") {
                     Text("Bewege dich langsam bei gutem Licht. Erfasse jede Wand, Bodenkante, Tür und jedes Fenster aus mehreren Winkeln. Spiegel, Glas und verdeckte Flächen können fehlen oder ungenau sein.")
                     Text("Volumen = erkannte Grundfläche × Raumhöhe. Bei Dachschrägen, offenen Räumen oder unvollständiger Kontur ist das kein exaktes Raumvolumen. Die Raumhöhe kannst du im Projekt korrigieren.")
-                    Text("Möbel werden als Kategorien und vereinfachte Körper erfasst. Der Oberflächenmodus erzeugt ein untexturiertes LiDAR-Netz, kein fotorealistisches Objektmodell.")
+                    Text("Im klassischen Raumscan sind Möbel vereinfachte Körper. Foto-Raum ergänzt das LiDAR-Netz um echte Kamerabilder und einen freien Rundgang. Nicht beobachtete Flächen bleiben neutral; Nahtstellen zwischen Fotos sind möglich.")
+                    Text("Objekt-Fotoscan berechnet ein texturiertes Modell aus mehreren Foto-Runden. iOS unterstützt die mobile Detailstufe. Rohfotos bleiben im Projekt und können für eine spätere Berechnung auf einem Mac exportiert werden. Bei wenig Platz lassen sich nicht mehr benötigte Aufnahmeentwürfe im Objektmodus löschen.")
                 }
                 Section("Privat & unabhängig") {
                     Text("Keine Werbung, kein Abo, kein Konto. Die App sendet keine Scans an einen Server. Projekte liegen im Dokumente-Ordner der App und können Teil deines Geräte-Backups sein. Beim Löschen der App werden lokale Projekte entfernt; exportiere wichtige Projekte vorher als JSON-Archiv.")
-                    LabeledContent("Version", value: "1.0.0 · RJ Spatial")
+                    LabeledContent("Version", value: "2.0.0 · RJ Spatial")
                 }
             }.navigationTitle("Einstellungen")
         }

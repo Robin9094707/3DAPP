@@ -70,7 +70,7 @@ final class MeshController: NSObject, ObservableObject, ARSCNViewDelegate, ARSes
         lock.unlock()
         DispatchQueue.main.async { self.vertexCount = vertices; self.faceCount = faces }
     }
-    private static func geometry(_ mesh: ARMeshGeometry) -> SCNGeometry {
+    static func geometry(_ mesh: ARMeshGeometry) -> SCNGeometry {
         let vertex = mesh.vertices
         let source = SCNGeometrySource(data: Data(bytes: vertex.buffer.contents(), count: vertex.buffer.length), semantic: .vertex, vectorCount: vertex.count, usesFloatComponents: true, componentsPerVector: 3, bytesPerComponent: MemoryLayout<Float>.size, dataOffset: vertex.offset, dataStride: vertex.stride)
         let faces = mesh.faces

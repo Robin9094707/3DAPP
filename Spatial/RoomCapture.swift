@@ -15,6 +15,8 @@ struct CaptureRouter: View {
             if authorized {
                 switch kind {
                 case .room, .volume: RoomScannerView(kind: kind)
+                case .photoRoom: PhotoRoomSetup()
+                case .object: ObjectPhotoScanView()
                 case .measure: ARMeasureView()
                 case .mesh: MeshScannerView()
                 }

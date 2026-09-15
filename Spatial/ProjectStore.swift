@@ -8,6 +8,7 @@ struct ProjectArchive: Codable {
     var project: ScanProject
     var capturedRoom: Data?
     var meshOBJ: Data?
+    var photoFiles: [String: Data]?
 }
 
 enum SpatialError: LocalizedError {
@@ -69,6 +70,19 @@ enum SpatialError: LocalizedError {
         try JSONEncoder().encode(project).write(to: file(project.id, "project.json"), options: .atomic)
         if let index = projects.firstIndex(where: { $0.id == project.id }) { projects[index] = project }
     }
+    func addPhotoProject(_ project: ScanProject, assets: URL) throws {
+        guard let photo = project.photoAsset else { throw SpatialError.message("Fotomodell fehlt.") }
+        guard ["object.usdz", "textured-room.json"].contains(photo.modelFile), FileManager.default.fileExists(atPath: assets.appendingPathComponent(photo.modelFile).path) else { throw SpatialError.message("3D-Modell wurde nicht fertiggestellt.") }
+        if photo.modelFile == "textured-room.json" {
+            let model = try JSONDecoder().decode(TexturedRoomModel.self, from: Data(contentsOf: assets.appendingPathComponent(photo.modelFile)))
+            try model.validate()
+            guard model.keyframes.allSatisfy({ FileManager.default.fileExists(atPath: assets.appendingPathComponent($0.filename).path) }) else { throw SpatialError.message("Mindestens eine Bildtextur fehlt im Projektarchiv.") }
+        }
+        // Source photos and model move together on the same volume; failure leaves the draft intact.
+        try JSONEncoder().encode(project).write(to: assets.appendingPathComponent("project.json"), options: .atomic)
+        try FileManager.default.moveItem(at: assets, to: directory(project.id))
+        projects.insert(project, at: 0)
+    }
     func delete(_ project: ScanProject) throws {
         try FileManager.default.removeItem(at: directory(project.id))
         projects.removeAll { $0.id == project.id }
@@ -76,7 +90,18 @@ enum SpatialError: LocalizedError {
     func archive(_ project: ScanProject) throws -> URL {
         let room = project.hasRawRoom ? try Data(contentsOf: file(project.id, "room.json")) : nil
         let mesh = project.hasMesh ? try Data(contentsOf: file(project.id, "mesh.obj")) : nil
-        let archive = ProjectArchive(project: project, capturedRoom: room, meshOBJ: mesh)
+        var files: [String: Data]?
+        if project.photoAsset != nil {
+            files = [:]
+            let names = try FileManager.default.contentsOfDirectory(at: directory(project.id), includingPropertiesForKeys: [.fileSizeKey])
+                .filter { Self.allowedPhotoFile($0.lastPathComponent) }
+            let total = try names.reduce(0) { try $0 + ($1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) }
+            guard total < 100_000_000 else { throw SpatialError.message("Für dieses große Fotomodell bitte den ZIP-Export verwenden. JSON-Archive sind auf 100 MB Nutzdaten begrenzt.") }
+            for url in names { files?[url.lastPathComponent] = try Data(contentsOf: url) }
+        }
+        var exported = project
+        if exported.kind == .object { exported.photoAsset?.retainedSources = false }
+        let archive = ProjectArchive(project: exported, capturedRoom: room, meshOBJ: mesh, photoFiles: files)
         let target = try Exporter.temporaryURL("RJ-Spatial-\(project.id.uuidString.prefix(8)).json")
         try JSONEncoder().encode(archive).write(to: target, options: .atomic)
         return target
@@ -95,7 +120,22 @@ enum SpatialError: LocalizedError {
         var project = archive.project
         project.id = UUID(); project.name += " (Import)"
         project.hasUSDZ = false; project.hasRawRoom = false; project.hasMesh = false
+        if let photo = project.photoAsset {
+            guard let files = archive.photoFiles, files.count <= 102, files[photo.modelFile] != nil, files.keys.allSatisfy(Self.allowedPhotoFile) else { throw SpatialError.message("Das Foto-Projektarchiv ist unvollständig.") }
+            let staging = root.appendingPathComponent(".photo-import-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: staging) }
+            for (name, data) in files { try data.write(to: staging.appendingPathComponent(name), options: .atomic) }
+            if project.kind == .object { project.photoAsset?.retainedSources = false }
+            try addPhotoProject(project, assets: staging)
+            return
+        }
         let room = try archive.capturedRoom.map { try JSONDecoder().decode(CapturedRoom.self, from: $0) }
         _ = try add(project, room: room, mesh: archive.meshOBJ)
+    }
+    private static func allowedPhotoFile(_ name: String) -> Bool {
+        if ["object.usdz", "textured-room.json"].contains(name) { return true }
+        guard name.hasPrefix("photo-"), name.hasSuffix(".jpg") else { return false }
+        return Int(name.dropFirst(6).dropLast(4)).map { $0 >= 0 && $0 < 100 } ?? false
     }
 }

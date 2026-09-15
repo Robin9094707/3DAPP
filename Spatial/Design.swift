@@ -66,7 +66,7 @@ struct ActionCard: View {
                     .frame(width: 48, height: 52).background(SpatialStyle.mint.opacity(0.09), in: RoundedRectangle(cornerRadius: 15))
                 VStack(alignment: .leading, spacing: 5) {
                     Text(kind.title).font(.headline).foregroundStyle(.primary)
-                    Text(available ? kind.subtitle : "LiDAR wird für diesen Modus benötigt").font(.caption).foregroundStyle(.secondary)
+                    Text(available ? kind.subtitle : "Auf diesem Gerät nicht verfügbar").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: available ? "arrow.up.right" : "info.circle").foregroundStyle(.secondary)

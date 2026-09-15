@@ -16,6 +16,8 @@ struct ProjectDetailView: View {
     @State private var share: SharePayload?
     @State private var editing = false
     @State private var quickLook = false
+    @State private var photoViewer = false
+    @State private var exportingSources = false
     @State private var planScale: CGFloat = 1
     @GestureState private var pinch: CGFloat = 1
     @State private var planOffset: CGSize = .zero
@@ -32,10 +34,14 @@ struct ProjectDetailView: View {
                             Spacer()
                             Text(project.createdAt, style: .date).font(.caption).foregroundStyle(.secondary)
                         }
-                        Picker("Ansicht", selection: $page) { Text("3D").tag(0); if !project.hasMesh { Text("Grundriss").tag(1) }; Text("Details").tag(2) }.pickerStyle(.segmented)
-                        if page == 0 { scene(project) }
-                        if page == 1 { plan(project) }
-                        if page != 2 { controls(project) }
+                        if project.photoAsset != nil {
+                            photoSummary(project)
+                        } else {
+                            Picker("Ansicht", selection: $page) { Text("3D").tag(0); if !project.hasMesh { Text("Grundriss").tag(1) }; Text("Details").tag(2) }.pickerStyle(.segmented)
+                            if page == 0 { scene(project) }
+                            if page == 1 { plan(project) }
+                            if page != 2 { controls(project) }
+                        }
                         if let element = project.elements.first(where: { $0.id == selected }) { inspector(element) }
                         metrics(project)
                         if page == 2 { elementList(project) }
@@ -56,8 +62,26 @@ struct ProjectDetailView: View {
                     }
                     .sheet(isPresented: $editing) { ProjectEditor(draft: project) }
                     .sheet(isPresented: $quickLook) { ModelQuickLook(url: store.file(project.id, "room.usdz")) }
+                    .fullScreenCover(isPresented: $photoViewer) { PhotoProjectViewer(project: project, folder: store.directory(project.id)) }
             } else { ContentUnavailableView("Projekt nicht vorhanden", systemImage: "folder.badge.questionmark") }
         }.sheet(item: $share) { ShareSheet(urls: $0.urls) }
+    }
+    @ViewBuilder private func photoSummary(_ p: ScanProject) -> some View {
+        if let asset = p.photoAsset {
+            VStack(alignment: .leading, spacing: 18) {
+                Image(systemName: p.kind.icon).font(.system(size: 54)).foregroundStyle(SpatialStyle.mint)
+                Text(p.kind == .photoRoom ? "Dein Raum. Zum Durchgehen." : "Dein Objekt. In echten Farben.").font(.system(.title, design: .rounded, weight: .bold))
+                Text(p.kind == .photoRoom ? "Öffne das texturierte Modell, bewege dich frei hindurch und sieh dir die aufgenommenen Fotos an." : "Drehe dein Foto-Modell, teile Ansichten als Bild oder öffne den USDZ-Export in AR.").font(.subheadline).foregroundStyle(.secondary)
+                Button { photoViewer = true } label: { Label("3D-Ansicht öffnen", systemImage: "cube").font(.headline).frame(maxWidth: .infinity).padding(12) }.buttonStyle(.borderedProminent)
+                LabeledContent("Aufnahmefotos", value: asset.imageCount.formatted())
+                LabeledContent("Qualität", value: asset.quality)
+                if let fraction = asset.texturedFraction {
+                    LabeledContent("Dreiecke mit Bildtextur", value: fraction.formatted(.percent.precision(.fractionLength(0))))
+                    Text("Dieser Anteil beschreibt die Texturzuordnung, nicht die Genauigkeit oder Vollständigkeit des Scans.").font(.caption).foregroundStyle(.secondary)
+                }
+                if exportingSources { ProgressView("Originalaufnahmen verpacken …") }
+            }.padding(22).spatialGlass()
+        }
     }
     private func scene(_ p: ScanProject) -> some View {
         RoomSceneView(project: p, meshURL: p.hasMesh ? store.file(p.id, "mesh.obj") : nil, hiddenKinds: hiddenKinds, dimensions: showDimensions, wireframe: wireframe, exploded: exploded, topView: topView, units: units, selected: $selected, resetToken: resetToken)
@@ -115,7 +139,7 @@ struct ProjectDetailView: View {
                 }.font(.subheadline).padding(20).spatialGlass()
             }
         }
-        if p.hasMesh {
+        if p.hasMesh || p.kind == .photoRoom {
             HStack { MetricTile(title: "3D-Punkte", value: p.meshVertexCount.formatted(), icon: "circle.dotted"); MetricTile(title: "Dreiecke", value: p.meshFaceCount.formatted(), icon: "triangle") }
         }
     }
@@ -163,13 +187,30 @@ struct ProjectDetailView: View {
     }
     private func exportMenu(_ p: ScanProject) -> some View {
         Menu {
-            Button("Projektarchiv · JSON", systemImage: "archivebox") { export { try store.archive(p) } }
+            Button(p.kind == .object ? "Modellarchiv ohne Rohfotos · JSON" : "Projektarchiv · JSON", systemImage: "archivebox") { export { try store.archive(p) } }
+            if p.photoAsset != nil {
+                Button("Modell und Aufnahmen · ZIP", systemImage: "photo.stack") { exportSources(p) }
+                if p.kind == .object { Button("Texturiertes 3D-Objekt · USDZ", systemImage: "cube") { share = SharePayload(urls: [store.file(p.id,"object.usdz")]) } }
+            }
+            if p.photoAsset == nil {
             Button("Messbericht · PDF", systemImage: "doc.richtext") { export { try Exporter.pdf(p, units: units) } }
             Button("Maßtabelle · CSV", systemImage: "tablecells") { export { try Exporter.csv(p) } }
             if !p.hasMesh { Button("Grundriss · SVG", systemImage: "square.dashed") { export { try Exporter.svg(p, units: units) } } }
             if p.hasUSDZ { Button("3D-Modell · USDZ", systemImage: "cube") { share = SharePayload(urls: [store.file(p.id, "room.usdz")]) } }
             if p.hasMesh { Button("Dreiecksnetz · OBJ", systemImage: "cube.transparent") { share = SharePayload(urls: [store.file(p.id, "mesh.obj")]) } }
-        } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Projekt exportieren")
+            }
+        } label: { Image(systemName: "square.and.arrow.up") }.disabled(exportingSources).accessibilityLabel("Projekt exportieren")
+    }
+    private func exportSources(_ p: ScanProject) {
+        let folder = store.directory(p.id)
+        exportingSources = true
+        Task {
+            do {
+                let url = try await Task.detached(priority: .userInitiated) { try PhotoZIP.write(folder: folder, filename: "RJ-Spatial-Modell-und-Aufnahmen.zip") }.value
+                share = SharePayload(urls: [url])
+            } catch { store.errorMessage = error.localizedDescription }
+            exportingSources = false
+        }
     }
     private func export(_ action: () throws -> URL) {
         do { share = SharePayload(urls: [try action()]) } catch { store.errorMessage = error.localizedDescription }

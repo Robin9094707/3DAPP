@@ -12,18 +12,20 @@ struct Point3: Codable, Hashable {
 }
 
 enum ScanKind: String, Codable, CaseIterable, Identifiable {
-    case room, volume, measure, mesh
+    case room, volume, photoRoom, object, measure, mesh
     var id: String { rawValue }
     var title: String {
-        switch self { case .room: return "Raumscan"; case .volume: return "Fläche & Volumen"; case .measure: return "AR-Maßband"; case .mesh: return "3D-Oberflächen" }
+        switch self { case .room: return "Raumscan"; case .volume: return "Fläche & Volumen"; case .photoRoom: return "Foto-Raum & Rundgang"; case .object: return "Objekt-Fotoscan"; case .measure: return "AR-Maßband"; case .mesh: return "3D-Oberflächen" }
     }
     var icon: String {
-        switch self { case .room: return "viewfinder"; case .volume: return "cube.transparent"; case .measure: return "ruler"; case .mesh: return "cube.transparent.fill" }
+        switch self { case .room: return "viewfinder"; case .volume: return "cube.transparent"; case .photoRoom: return "viewfinder.circle.fill"; case .object: return "camera.aperture"; case .measure: return "ruler"; case .mesh: return "cube.transparent.fill" }
     }
     var subtitle: String {
         switch self {
         case .room: return "Wände, Fenster und Möbel als 3D-Plan"
         case .volume: return "Grundfläche, Raumhöhe und Rauminhalt"
+        case .photoRoom: return "Echte Bildtexturen, Fotos und begehbares 3D"
+        case .object: return "Geführte Fotos für ein texturiertes Objektmodell"
         case .measure: return "Strecken, Umfang und Bodenflächen messen"
         case .mesh: return "LiDAR-Dreiecksnetz erfassen und exportieren"
         }
@@ -118,6 +120,7 @@ struct ScanProject: Codable, Identifiable {
     var hasRawRoom = false
     var hasMesh = false
     var heightOverride: Double?
+    var photoAsset: PhotoAssetInfo?
     var floorPolygons: [[SIMD3<Float>]] {
         let native = elements.filter { $0.kind == .floor }.map(\.worldCorners).filter { $0.count >= 3 && Geometry.areaXZ($0) > 0.01 }
         if !native.isEmpty { return native }
@@ -131,7 +134,9 @@ struct ScanProject: Codable, Identifiable {
     var roomHeight: Double? {
         if let heightOverride { return heightOverride }
         let heights = elements.filter { $0.kind == .wall && $0.dimensions.y > 0 }.map { Double($0.dimensions.y) }.sorted()
-        return heights.isEmpty ? nil : heights[heights.count / 2]
+        guard !heights.isEmpty else { return nil }
+        let middle = heights.count / 2
+        return heights.count.isMultiple(of: 2) ? (heights[middle-1] + heights[middle]) / 2 : heights[middle]
     }
     var volume: Double? {
         guard let floorArea, let roomHeight else { return nil }
