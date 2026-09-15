@@ -49,7 +49,9 @@ struct ObjectDraft: Codable, Identifiable {
             var configuration = ObjectCaptureSession.Configuration()
             configuration.checkpointDirectory = draft.folder.appendingPathComponent("Checkpoints")
             configuration.isOverCaptureEnabled = false
-            session.shouldPlayHaptics = (UserDefaults.standard.object(forKey: "haptics") as? Bool) ?? true
+            if #available(iOS 18.0, *) {
+                session.shouldPlayHaptics = (UserDefaults.standard.object(forKey: "haptics") as? Bool) ?? true
+            }
             session.start(imagesDirectory: draft.folder.appendingPathComponent("SourceImages"), configuration: configuration)
             capture = session
             UIApplication.shared.isIdleTimerDisabled = true

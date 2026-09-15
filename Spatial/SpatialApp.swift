@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 @main struct SpatialApp: App {
     @StateObject private var store = ProjectStore()
     @AppStorage("appearance") private var appearance = "system"
-    var body: some Scene {
+    var body: some SwiftUI.Scene {
         WindowGroup {
             RootView().environmentObject(store).tint(SpatialStyle.mint)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
