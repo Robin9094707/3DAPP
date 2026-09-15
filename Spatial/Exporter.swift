@@ -71,7 +71,7 @@ enum Exporter {
             func line(_ text: String, size: CGFloat = 11, bold: Bool = false) {
                 let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byWordWrapping
                 let attrs: [NSAttributedString.Key: Any] = [.font: bold ? UIFont.boldSystemFont(ofSize: size) : UIFont.systemFont(ofSize: size), .foregroundColor: UIColor.black, .paragraphStyle: paragraph]
-                let rect = (text as NSString).boundingRect(with: CGSize(width: 515, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs, context: nil)
+                let rect = (text as NSString).boundingRect(with: CGSize(width: 515, height: CGFloat.greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs, context: nil)
                 if y + rect.height + 12 > 775 { beginPage() }
                 (text as NSString).draw(in: CGRect(x: 40, y: y, width: 515, height: rect.height + 4), withAttributes: attrs)
                 y += rect.height + 12
